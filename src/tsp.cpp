@@ -7,8 +7,347 @@
 #include <set>
 #include <limits>
 #include <algorithm>
+#include <queue>
+#include <map>
+#include <unordered_map>
+#include <functional>
 
 using namespace std;
+
+double euclideanDistance(const Point& a, const Point& b) {
+    return sqrt((a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y));
+}
+
+// Blossom algorithm data structures
+struct BlossomNode {
+    int parent;
+    int mate;
+    int label;  // 0: unlabeled, 1: outer, -1: inner
+    int blossom_root;  // root of the blossom containing this vertex
+    double dual;  // dual variable for primal-dual method
+    
+    BlossomNode() : parent(-1), mate(-1), label(0), blossom_root(-1), dual(0) {}
+};
+
+struct Edge {
+    int u, v;
+    double weight;
+    Edge(int _u, int _v, double _w) : u(_u), v(_v), weight(_w) {}
+};
+
+// Helper functions for Blossom algorithms
+int find_blossom_root(vector<BlossomNode>& nodes, int v) {
+    if (v < 0 || v >= nodes.size()) return -1;  // Safety check
+    if (nodes[v].blossom_root == -1) return v;
+    nodes[v].blossom_root = find_blossom_root(nodes, nodes[v].blossom_root);
+    return nodes[v].blossom_root;
+}
+
+vector<int> find_augmenting_path(vector<BlossomNode>& nodes, int start, int end) {
+    vector<int> path;
+    if (start < 0 || end < 0 || start >= nodes.size() || end >= nodes.size()) {
+        return path;  // Return empty path if invalid indices
+    }
+    
+    vector<bool> visited(nodes.size(), false);  // Prevent infinite loops
+    int current = end;
+    while (current != start && current != -1 && !visited[current]) {
+        visited[current] = true;
+        path.push_back(current);
+        current = nodes[current].parent;
+    }
+    
+    if (current == start) {
+        path.push_back(start);
+        reverse(path.begin(), path.end());
+        return path;
+    }
+    
+    return vector<int>();  // Return empty path if no valid path found
+}
+
+// Edmonds' Blossom Algorithm O(n^4)
+vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
+    if (coords.empty()) return {};
+    
+    int n = coords.size();
+    vector<BlossomNode> nodes(n);
+    vector<Edge> edges;
+    
+    // Create edges with weights
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            double weight = euclideanDistance(coords[i], coords[j]);
+            edges.emplace_back(i, j, weight);
+        }
+    }
+    
+    vector<pair<int, int>> matching;
+    
+    // Main algorithm loop
+    int max_iterations = n * n;  // Prevent infinite loops
+    int iteration = 0;
+    
+    while (iteration++ < max_iterations) {
+        // Reset labels and find an exposed vertex
+        for (auto& node : nodes) {
+            node.label = 0;
+            node.parent = -1;
+        }
+        
+        int exposed = -1;
+        for (int i = 0; i < n; i++) {
+            if (nodes[i].mate == -1) {
+                exposed = i;
+                break;
+            }
+        }
+        
+        if (exposed == -1) break;  // Perfect matching found
+        
+        // BFS to find augmenting path
+        queue<int> q;
+        nodes[exposed].label = 1;  // Mark as outer
+        q.push(exposed);
+        
+        bool found_augmenting_path = false;
+        while (!q.empty() && !found_augmenting_path) {
+            int u = q.front();
+            q.pop();
+            
+            for (const Edge& e : edges) {
+                int v = (e.u == u) ? e.v : (e.u == u ? v : -1);
+                if (v == -1) continue;
+                
+                int v_root = find_blossom_root(nodes, v);
+                int u_root = find_blossom_root(nodes, u);
+                
+                if (v_root == -1 || u_root == -1 || v_root == u_root) continue;
+                
+                if (nodes[v].label == 0) {  // v is unlabeled
+                    if (nodes[v].mate != -1) {
+                        nodes[v].label = -1;  // inner
+                        nodes[v].parent = u;
+                        int mate = nodes[v].mate;
+                        if (mate >= 0 && mate < n) {  // Safety check
+                            nodes[mate].label = 1;  // outer
+                            nodes[mate].parent = v;
+                            q.push(mate);
+                        }
+                    } else {
+                        // Found augmenting path
+                        nodes[v].parent = u;
+                        vector<int> path = find_augmenting_path(nodes, exposed, v);
+                        
+                        if (!path.empty()) {  // Only augment if valid path found
+                            // Augment matching along path
+                            for (size_t i = 0; i < path.size() - 1; i += 2) {
+                                nodes[path[i]].mate = path[i + 1];
+                                nodes[path[i + 1]].mate = path[i];
+                            }
+                            found_augmenting_path = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!found_augmenting_path) break;
+    }
+    
+    // Construct final matching
+    for (int i = 0; i < n; i++) {
+        if (i < nodes[i].mate) {
+            matching.emplace_back(i, nodes[i].mate);
+        }
+    }
+    
+    return matching;
+}
+
+// Gabow's improved Blossom Algorithm O(n^3)
+vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
+    if (coords.empty()) {
+        cerr << "[DEBUG] Empty coordinates in blossom_gabow" << endl;
+        return {};
+    }
+
+    cerr << "[DEBUG] Starting Gabow's algorithm with " << coords.size() << " vertices" << endl;
+    
+    int n = coords.size();
+    vector<BlossomNode> nodes(n);
+    vector<vector<double>> weights(n, vector<double>(n));
+    
+    // Initialize weight matrix
+    try {
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                weights[i][j] = euclideanDistance(coords[i], coords[j]);
+            }
+        }
+    } catch (const exception& e) {
+        cerr << "[DEBUG] Exception in weight matrix initialization: " << e.what() << endl;
+        return {};
+    }
+    
+    // Initialize dual variables
+    for (int i = 0; i < n; i++) {
+        double min_weight = numeric_limits<double>::max();
+        for (int j = 0; j < n; j++) {
+            if (i != j) {
+                min_weight = min(min_weight, weights[i][j]);
+            }
+        }
+        nodes[i].dual = min_weight / 2;
+    }
+    
+    vector<pair<int, int>> matching;
+    int iterations = 0;
+    const int MAX_ITERATIONS = n * n * n;  // O(n^3) bound
+    
+    while (iterations++ < MAX_ITERATIONS) {
+        cerr << "[DEBUG] Iteration " << iterations << " of matching algorithm" << endl;
+        
+        // Reset labels and find an exposed vertex
+        for (auto& node : nodes) {
+            node.label = 0;
+            node.parent = -1;
+            node.blossom_root = -1;
+        }
+        
+        int exposed = -1;
+        for (int i = 0; i < n; i++) {
+            if (nodes[i].mate == -1) {
+                exposed = i;
+                break;
+            }
+        }
+        
+        if (exposed == -1) {
+            cerr << "[DEBUG] Perfect matching found" << endl;
+            break;  // Perfect matching found
+        }
+        
+        cerr << "[DEBUG] Processing exposed vertex " << exposed << endl;
+        
+        // Priority queue for efficient edge selection
+        using pqtype = tuple<double, int, int>;  // (slack, u, v)
+        priority_queue<pqtype, vector<pqtype>, greater<pqtype>> pq;
+        
+        nodes[exposed].label = 1;
+        
+        // Initialize priority queue with edges from exposed vertex
+        for (int v = 0; v < n; v++) {
+            if (v != exposed) {
+                double slack = weights[exposed][v] - nodes[exposed].dual - nodes[v].dual;
+                pq.push({slack, exposed, v});
+            }
+        }
+        
+        bool augmented = false;
+        set<pair<int, int>> processed_edges;  // Track processed edges to avoid cycles
+        
+        while (!pq.empty() && !augmented) {
+            auto [slack, u, v] = pq.top();
+            pq.pop();
+            
+            // Skip if we've already processed this edge
+            if (processed_edges.count({u, v}) || processed_edges.count({v, u})) {
+                continue;
+            }
+            processed_edges.insert({u, v});
+            
+            if (nodes[v].label == 0) {  // v is unlabeled
+                if (nodes[v].mate == -1) {
+                    cerr << "[DEBUG] Found augmenting path to " << v << endl;
+                    // Found augmenting path
+                    nodes[v].parent = u;
+                    vector<int> path = find_augmenting_path(nodes, exposed, v);
+                    
+                    if (!path.empty()) {
+                        // Augment matching along path
+                        for (size_t i = 0; i < path.size() - 1; i += 2) {
+                            if (path[i] >= 0 && path[i] < n && path[i+1] >= 0 && path[i+1] < n) {
+                                nodes[path[i]].mate = path[i + 1];
+                                nodes[path[i + 1]].mate = path[i];
+                            } else {
+                                cerr << "[DEBUG] Invalid path indices: " << path[i] << ", " << path[i+1] << endl;
+                                return {};
+                            }
+                        }
+                        augmented = true;
+                    }
+                } else {
+                    // Extend alternating path
+                    int mate = nodes[v].mate;
+                    if (mate >= 0 && mate < n) {
+                        nodes[v].label = -1;
+                        nodes[v].parent = u;
+                        nodes[mate].label = 1;
+                        nodes[mate].parent = v;
+                        
+                        // Add edges from new outer vertex
+                        for (int w = 0; w < n; w++) {
+                            if (nodes[w].label == 0) {
+                                double new_slack = weights[mate][w] - nodes[mate].dual - nodes[w].dual;
+                                pq.push({new_slack, mate, w});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!augmented) {
+            cerr << "[DEBUG] Failed to augment matching in iteration " << iterations << endl;
+            // Update dual variables
+            vector<double> delta(n, numeric_limits<double>::max());
+            for (int i = 0; i < n; i++) {
+                if (nodes[i].label == 1) {  // outer
+                    for (int j = 0; j < n; j++) {
+                        if (nodes[j].label == 0) {  // unlabeled
+                            delta[i] = min(delta[i], (weights[i][j] - nodes[i].dual - nodes[j].dual) / 2);
+                        }
+                    }
+
+                }
+
+            }
+            
+            double min_delta = numeric_limits<double>::max();
+            for (double d : delta) {
+                if (d > 0) min_delta = min(min_delta, d);
+            }
+            
+            if (min_delta == numeric_limits<double>::max()) {
+                cerr << "[DEBUG] No valid dual adjustment possible" << endl;
+                break;
+            }
+            
+            // Apply dual adjustments
+            for (int i = 0; i < n; i++) {
+                if (nodes[i].label == 1) nodes[i].dual += min_delta;
+                else if (nodes[i].label == -1) nodes[i].dual -= min_delta;
+            }
+        }
+    }
+    
+    if (iterations >= MAX_ITERATIONS) {
+        cerr << "[DEBUG] Maximum iterations reached in blossom_gabow" << endl;
+        return {};
+    }
+    
+    // Construct final matching
+    for (int i = 0; i < n; i++) {
+        if (i < nodes[i].mate) {
+            matching.emplace_back(i, nodes[i].mate);
+        }
+    }
+    
+    cerr << "[DEBUG] Gabow's algorithm completed with " << matching.size() << " matched pairs" << endl;
+    return matching;
+}
 
 vector<Point> readTSPLib(const string& filename) {
     ifstream file(filename);
@@ -36,10 +375,6 @@ vector<Point> readTSPLib(const string& filename) {
     }
 
     return coords;
-}
-
-double euclideanDistance(const Point& a, const Point& b) {
-    return sqrt((a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y));
 }
 
 // vector<vector<double>> computeDistanceMatrix(const vector<Point>& coords) {
@@ -87,50 +422,118 @@ vector<pair<int, int>> minimumSpanningTree(const vector<Point>& coords) {
     return mst;
 }
 
-// Naive matching: greedy pair closest odd-degree nodes (for large data use)
-vector<pair<int, int>> greedyPerfectMatching(const vector<int>& odd, const vector<Point>& coords) {
+// Naive matching: greedy pair closest odd-degree nodes
+vector<pair<int, int>> greedyPerfectMatching(const vector<int>& odd_vertices, const vector<Point>& coords) {
+    if (odd_vertices.empty()) return {};
+    
+    cerr << "[DEBUG] Starting greedy matching with " << odd_vertices.size() << " vertices" << endl;
+    
     vector<pair<int, int>> matching;
-    vector<bool> used(odd.size(), false);
-    for (int i = 0; i < odd.size(); ++i) {
+    vector<bool> used(odd_vertices.size(), false);
+
+    // For each unmatched vertex, find the closest unmatched neighbor
+    for (size_t i = 0; i < odd_vertices.size(); ++i) {
         if (used[i]) continue;
-        int best = -1;
-        double bestDist = numeric_limits<double>::max();
-        for (int j = i + 1; j < odd.size(); ++j) {
-            double d = euclideanDistance(coords[odd[i]], coords[odd[j]]);
-            if (!used[j] && d < bestDist) {
-                best = j;
-                bestDist = d;
+
+        int best_j = -1;
+        double best_dist = numeric_limits<double>::max();
+
+        // Find closest unmatched vertex
+        for (size_t j = i + 1; j < odd_vertices.size(); ++j) {
+            if (!used[j]) {
+                double dist = euclideanDistance(coords[odd_vertices[i]], coords[odd_vertices[j]]);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_j = j;
+                }
             }
         }
-        if (best != -1) {
-            matching.emplace_back(odd[i], odd[best]);
-            used[i] = used[best] = true;
+
+        if (best_j != -1) {
+            // Store the original vertex indices from odd_vertices
+            matching.emplace_back(odd_vertices[i], odd_vertices[best_j]);
+            used[i] = used[best_j] = true;
+            cerr << "[DEBUG] Matched vertices " << odd_vertices[i] << " and " << odd_vertices[best_j] 
+                 << " (distance: " << best_dist << ")" << endl;
         }
     }
+
+    cerr << "[DEBUG] Greedy matching completed with " << matching.size() << " pairs" << endl;
     return matching;
 }
 
 // Euler tour using Hierholzer's Algorithm
 vector<int> eulerianTour(multimap<int, int>& graph, int start) {
+    if (graph.empty()) {
+        cerr << "Empty graph in eulerianTour" << endl;
+        return {};
+    }
+
     vector<int> tour;
     stack<int> s;
+    set<int> vertices;  // Track all vertices
+    
+    // First, collect all vertices
+    for (const auto& [u, v] : graph) {
+        vertices.insert(u);
+        vertices.insert(v);
+    }
+    
+    // Verify start vertex exists in graph
+    if (vertices.find(start) == vertices.end()) {
+        cerr << "Start vertex " << start << " not found in graph" << endl;
+        return {};
+    }
+    
+    // Track the number of edges to ensure we don't get stuck
+    size_t total_edges = graph.size();
+    size_t edges_used = 0;
+    
     s.push(start);
-
+    
     while (!s.empty()) {
         int u = s.top();
+        
         auto range = graph.equal_range(u);
         if (range.first == range.second) {
+            // No more edges from this vertex
             tour.push_back(u);
             s.pop();
         } else {
+            // Take the next available edge
             int v = range.first->second;
+            
+            // Remove both directions of the edge
             graph.erase(range.first);
-            auto it = graph.find(v);
-            while (it != graph.end() && it->second != u) ++it;
-            if (it != graph.end()) graph.erase(it);
+            edges_used++;
+            
+            // Find and remove the reverse edge
+            auto rev_range = graph.equal_range(v);
+            for (auto it = rev_range.first; it != rev_range.second; ++it) {
+                if (it->second == u) {
+                    graph.erase(it);
+                    edges_used++;
+                    break;
+                }
+            }
+            
             s.push(v);
         }
+        
+        // Safety check: ensure we're not stuck
+        if (edges_used > total_edges) {
+            cerr << "Possible infinite loop in eulerianTour" << endl;
+            return {};
+        }
     }
+    
+    // Verify the tour contains all vertices
+    set<int> tour_vertices(tour.begin(), tour.end());
+    if (tour_vertices != vertices) {
+        cerr << "Tour does not contain all vertices" << endl;
+        return {};
+    }
+    
     return tour;
 }
 
@@ -229,32 +632,122 @@ int computePermutationGap(const vector<int>& result, const string& tourFile) {
 
 // Christofides Algorithm for TSP
 vector<int> christofidesPath(const vector<Point>& coords) {
+    if (coords.empty()) {
+        cerr << "[DEBUG] Empty coordinates provided" << endl;
+        return {};
+    }
+    
+    // Get MST
     auto mst = minimumSpanningTree(coords);
+    if (mst.empty()) {
+        cerr << "[DEBUG] Failed to generate MST" << endl;
+        return vector<int>(coords.size());
+    }
 
+    // Find vertices with odd degree
     map<int, int> degree;
     for (auto& e : mst) {
+        if (e.first >= coords.size() || e.second >= coords.size()) {
+            cerr << "[DEBUG] Invalid MST edge: " << e.first << ", " << e.second << endl;
+            return vector<int>(coords.size());
+        }
         degree[e.first]++;
         degree[e.second]++;
     }
 
     vector<int> odd;
-    for (auto& [v, d] : degree)
-        if (d % 2 == 1) odd.push_back(v);
+    for (auto& [v, d] : degree) {
+        if (d % 2 == 1) {
+            if (v >= 0 && v < coords.size()) {
+                odd.push_back(v);
+            } else {
+                cerr << "[DEBUG] Invalid vertex index in degree map: " << v << endl;
+                return vector<int>(coords.size());
+            }
+        }
+    }
 
-    auto matching = greedyPerfectMatching(odd, coords);
+    cerr << "[DEBUG] Found " << odd.size() << " vertices with odd degree" << endl;
 
+    // Choose matching algorithm based on problem size
+    vector<pair<int, int>> matching;
+    if (odd.size() > 10000) {
+        cerr << "[DEBUG] Large graph detected (" << odd.size() << " vertices), using greedy matching" << endl;
+        matching = greedyPerfectMatching(odd, coords);
+    } else {
+        cerr << "[DEBUG] Using Gabow's algorithm for perfect matching" << endl;
+        // Create subgraph for Gabow's algorithm
+        vector<Point> odd_vertices;
+        for (int idx : odd) {
+            odd_vertices.push_back(coords[idx]);
+        }
+        
+        auto gabow_matching = blossom_gabow(odd_vertices);
+        
+        // Convert Gabow's matching indices back to original graph indices
+        for (auto [u, v] : gabow_matching) {
+            if (u < odd.size() && v < odd.size()) {
+                matching.emplace_back(odd[u], odd[v]);
+            } else {
+                cerr << "[DEBUG] Invalid matching indices from Gabow: " << u << ", " << v << endl;
+                return vector<int>(coords.size());
+            }
+        }
+    }
+
+    cerr << "[DEBUG] Found " << matching.size() << " edges in perfect matching" << endl;
+
+    // Combine MST and matching edges into multigraph
     multimap<int, int> multigraph;
-    for (auto& [u, v] : mst) {
-        multigraph.insert({u, v});
-        multigraph.insert({v, u});
-    }
-    for (auto& [u, v] : matching) {
-        multigraph.insert({u, v});
-        multigraph.insert({v, u});
+    try {
+        for (auto& [u, v] : mst) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+        for (auto& [u, v] : matching) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+    } catch (const exception& e) {
+        cerr << "[DEBUG] Exception while building multigraph: " << e.what() << endl;
+        return vector<int>(coords.size());
     }
 
-    auto euler = eulerianTour(multigraph, 0);
-    return makeHamiltonian(euler);
+    if (multigraph.empty()) {
+        cerr << "[DEBUG] Empty multigraph" << endl;
+        return vector<int>(coords.size());
+    }
+
+    // Find Eulerian tour
+    try {
+        auto euler = eulerianTour(multigraph, 0);
+        if (euler.empty()) {
+            cerr << "[DEBUG] Empty Eulerian tour" << endl;
+            return vector<int>(coords.size());
+        }
+        
+        // Make Hamiltonian
+        auto hamilton = makeHamiltonian(euler);
+        if (hamilton.empty()) {
+            cerr << "[DEBUG] Empty Hamiltonian path" << endl;
+            return vector<int>(coords.size());
+        }
+        
+        // Verify path
+        for (int v : hamilton) {
+            if (v < 0 || v >= coords.size()) {
+                cerr << "[DEBUG] Invalid vertex in final path: " << v << endl;
+                return vector<int>(coords.size());
+            }
+        }
+        
+        return hamilton;
+    } catch (const exception& e) {
+        cerr << "[DEBUG] Exception in final path construction: " << e.what() << endl;
+        return vector<int>(coords.size());
+    }
 }
 
 // Held-Karp Algorithm for TSP
@@ -314,3 +807,45 @@ vector<int> heldkarpPath(const vector<Point>& coords) {
     reverse(path.begin(), path.end());
     return path;
 }
+
+// MST-based 2-approximation algorithm for TSP
+vector<int> mst2approx(const vector<Point>& coords) {
+    if (coords.empty()) return {};
+    
+    int n = coords.size();
+    if (n <= 1) return {0};
+    
+    // Get the minimum spanning tree edges
+    vector<pair<int, int>> mst_edges = minimumSpanningTree(coords);
+    
+    // Create adjacency list representation for the MST
+    vector<vector<int>> adj(n);
+    for (const auto& edge : mst_edges) {
+        adj[edge.first].push_back(edge.second);
+        adj[edge.second].push_back(edge.first);
+    }
+    
+    // Perform preorder traversal of the MST
+    vector<bool> visited(n, false);
+    vector<int> tour;
+    
+    std::function<void(int)> preorder = [&](int v) {
+        visited[v] = true;
+        tour.push_back(v);
+        
+        for (int u : adj[v]) {
+            if (!visited[u]) {
+                preorder(u);
+            }
+        }
+    };
+    
+    // Start DFS from vertex 0
+    preorder(0);
+    
+    // Add the starting vertex to complete the tour
+    // tour.push_back(0);
+    
+    return tour;
+}
+
