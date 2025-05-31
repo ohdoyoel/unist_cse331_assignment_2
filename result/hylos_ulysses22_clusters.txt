@@ -1,0 +1,24 @@
+Cluster 1:
+Centroid: (38.3733, 20.14)
+Cities: 1 8 16 
+
+Cluster 2:
+Centroid: (40.065, 25.735)
+Cities: 2 3 
+
+Cluster 3:
+Centroid: (36.385, 7.6575)
+Cities: 6 7 5 11 
+
+Cluster 4:
+Centroid: (37.405, 14.9925)
+Cities: 12 13 14 15 
+
+Cluster 5:
+Centroid: (37.0025, 23.26)
+Cities: 4 17 18 22 
+
+Cluster 6:
+Centroid: (40.708, 12.82)
+Cities: 10 19 20 21 9 
+
