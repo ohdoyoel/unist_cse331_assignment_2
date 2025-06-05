@@ -7,46 +7,51 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <queue>
+#include <random>
 
-HylosTSP::HylosTSP(const std::vector<Point>& cities, double alpha)
-    : cities_(cities), alpha_(alpha) {}
+std::random_device rd;
+std::mt19937 gen(rd());
+
+HylosTSP::HylosTSP(const std::vector<Point>& cities, double alpha, bool debug)
+    : cities_(cities), alpha_(alpha), debug_(debug) {}
 
 std::vector<int> HylosTSP::solve() {
-    std::cout << "1. Starting k-means clustering...\n";
-    int k = cities_.size() / 15;  // Aim for ~15 cities per cluster
-    k = std::max(10, std::min(k, 20));  // Keep k between 10 and 20
-    kmeans_clustering(k);
-    std::cout << "   Created " << clusters_.size() << " clusters\n";
+    debug_print("\n0. Starting Hylos TSP...\n");
+    debug_print("1. Starting clustering...\n");
+    cluster(ClusteringMethod::KMEANS);
+    debug_print("   Created " + std::to_string(clusters_.size()) + " clusters\n");
     for (size_t i = 0; i < clusters_.size(); i++) {
-        std::cout << "   Cluster " << i << " size: " << clusters_[i].cities.size() << "\n";
+        debug_print("   Cluster " + std::to_string(i) + " size: " + 
+                   std::to_string(clusters_[i].cities.size()) + "\n");
     }
     
-    std::cout << "2. Determining cluster visit order...\n";
+    debug_print("2. Determining cluster visit order...\n");
     cluster_order = determine_cluster_order();  // 멤버 변수에 저장
-    std::cout << "   Cluster visit order: ";
+    debug_print("   Cluster visit order: ");
     for (int idx : cluster_order) {
-        std::cout << idx << " ";
+        debug_print(std::to_string(idx) + " ");
     }
-    std::cout << "\n";
+    debug_print("\n");
     
-    std::cout << "3. Solving cluster TSPs using Held-Karp...\n";
+    debug_print("3. Solving cluster TSPs\n");
     solve_cluster_tsp();
     for (size_t i = 0; i < clusters_.size(); i++) {
-        std::cout << "   Cluster " << i << " path size: " << clusters_[i].optimized_path.size() << "\n";
+        debug_print("   Cluster " + std::to_string(i) + " path size: " + 
+                   std::to_string(clusters_[i].optimized_path.size()) + "\n");
     }
     
-    std::cout << "4. Finding connection points between clusters...\n";
+    debug_print("4. Finding connection points between clusters...\n");
     std::vector<int> final_path;
-    
     // 각 클러스터의 연결점들을 찾고 경로 연결
     for (size_t i = 0; i < cluster_order.size(); i++) {
         int curr_idx = cluster_order[i];
         int prev_idx = cluster_order[(i + cluster_order.size() - 1) % cluster_order.size()];
         int next_idx = cluster_order[(i + 1) % cluster_order.size()];
         
-        std::cout << "\nFinding connection points for cluster " << curr_idx 
-                  << " (prev: " << prev_idx 
-                  << ", next: " << next_idx << ")\n";
+        debug_print("    Finding connection points for cluster " + std::to_string(curr_idx) +
+                   " (prev: " + std::to_string(prev_idx) +
+                   ", next: " + std::to_string(next_idx) + ")\n");
         
         const auto& curr_cluster = clusters_[curr_idx];
         const auto& prev_cluster = clusters_[prev_idx];
@@ -58,8 +63,8 @@ std::vector<int> HylosTSP::solve() {
         auto [entry_point, exit_point] = find_best_entry_exit_points(
             clusters_[curr_idx], prev_centroid, next_centroid);
             
-        std::cout << "   Selected entry point: " << entry_point 
-                  << ", exit point: " << exit_point << "\n";
+        debug_print("   Selected entry point: " + std::to_string(entry_point) +
+                   ", exit point: " + std::to_string(exit_point) + "\n");
         
         // 현재 클러스터의 reordered path를 final_path에 추가
         for (int city : clusters_[curr_idx].optimized_path) {
@@ -67,14 +72,11 @@ std::vector<int> HylosTSP::solve() {
         }
     }
 
-    std::cout << "\n5. Final path: ";
+    debug_print("5. Final path: ");
     for (int city : final_path) {
-        std::cout << city << " ";
+        debug_print(std::to_string(city) + " ");
     }
-    std::cout << "\n";
-    
-    // // 순환 경로 완성을 위해 첫 번째 점 추가
-    // final_path.push_back(final_path[0]);
+    debug_print("\n");
     
     return final_path;
 }
@@ -122,14 +124,14 @@ void HylosTSP::exclusive_clustering(const std::vector<int>& order) {
     double mean, std;
     calculate_mean_std(distances, mean, std);
     double threshold = mean + alpha_ * std;
-    std::cout << "   Distance threshold: " << threshold << "\n";
+    std::cerr << "   Distance threshold: " << threshold << "\n";
     
     // Initialize first cluster
     Cluster current_cluster;
     current_cluster.cities.push_back(order[0]);
     
     int min_cluster_size = 3;   // 최소 클러스터 크기
-    int max_cluster_size = 20;  // 최대 클러스터 크기
+    int max_cluster_size = 22;  // 최대 클러스터 크기
     
     for (size_t i = 1; i < order.size(); i++) {
         double dist = euclideanDistance(cities_[order[i-1]], cities_[order[i]]);
@@ -140,15 +142,15 @@ void HylosTSP::exclusive_clustering(const std::vector<int>& order) {
              current_cluster.cities.size() >= min_cluster_size && 
              order.size() - i >= min_cluster_size)) {
             should_split = true;
-            std::cout << "   Splitting at distance " << dist << " (threshold: " << threshold << ")\n";
+            std::cerr << "   Splitting at distance " << dist << " (threshold: " << threshold << ")\n";
         }
         
         if (should_split) {
-            std::cout << "   Created cluster with cities: ";
+            std::cerr << "   Created cluster with cities: ";
             for (int city : current_cluster.cities) {
-                std::cout << city << " ";
+                std::cerr << city << " ";
             }
-            std::cout << "\n";
+            std::cerr << "\n";
             clusters_.push_back(current_cluster);
             current_cluster = Cluster();
         }
@@ -158,17 +160,17 @@ void HylosTSP::exclusive_clustering(const std::vector<int>& order) {
     
     if (!current_cluster.cities.empty()) {
         if (current_cluster.cities.size() < min_cluster_size && !clusters_.empty()) {
-            std::cout << "   Merging last small cluster with previous cluster\n";
+            std::cerr << "   Merging last small cluster with previous cluster\n";
             auto& last_cluster = clusters_.back();
             last_cluster.cities.insert(last_cluster.cities.end(),
                                      current_cluster.cities.begin(),
                                      current_cluster.cities.end());
         } else {
-            std::cout << "   Created last cluster with cities: ";
+            std::cerr << "   Created last cluster with cities: ";
             for (int city : current_cluster.cities) {
-                std::cout << city << " ";
+                std::cerr << city << " ";
             }
-            std::cout << "\n";
+            std::cerr << "\n";
             clusters_.push_back(current_cluster);
         }
     }
@@ -177,79 +179,17 @@ void HylosTSP::exclusive_clustering(const std::vector<int>& order) {
 void HylosTSP::solve_cluster_tsp() {
     for (size_t cluster_idx = 0; cluster_idx < clusters_.size(); cluster_idx++) {
         auto& cluster = clusters_[cluster_idx];
-        int n = cluster.cities.size();
-        std::cout << "   Solving TSP for cluster " << cluster_idx << " of size " << n << "...\n";
         
-        if (n == 1) {
-            // Single city case
-            cluster.optimized_path = {cluster.cities[0]};
-        } else if (n == 2) {
-            // Two cities case
-            cluster.optimized_path = {cluster.cities[0], cluster.cities[1], cluster.cities[0]};
-        } else {
-            // Held-Karp DP를 사용한 최적 경로 찾기
-            std::vector<std::vector<double>> dp(1 << n, std::vector<double>(n, 1e9));
-            std::vector<std::vector<int>> next(1 << n, std::vector<int>(n, -1));
-            
-            dp[1][0] = 0;
-            
-            for (int mask = 0; mask < (1 << n); mask++) {
-                for (int curr = 0; curr < n; curr++) {
-                    if (!(mask & (1 << curr))) continue;
-                    
-                    for (int next_city = 0; next_city < n; next_city++) {
-                        if (mask & (1 << next_city)) continue;
-                        
-                        int new_mask = mask | (1 << next_city);
-                        double new_cost = dp[mask][curr] + 
-                                        euclideanDistance(cities_[cluster.cities[curr]], 
-                                                        cities_[cluster.cities[next_city]]);
-                        
-                        if (new_cost < dp[new_mask][next_city]) {
-                            dp[new_mask][next_city] = new_cost;
-                            next[new_mask][next_city] = curr;
-                        }
-                    }
-                }
-            }
-            
-            std::vector<int> path;
-            int final_mask = (1 << n) - 1;
-            int last_city = 0;
-            double min_cost = std::numeric_limits<double>::max();
-            
-            for (int city = 0; city < n; city++) {
-                double cost = dp[final_mask][city] + 
-                             euclideanDistance(cities_[cluster.cities[city]], 
-                                             cities_[cluster.cities[0]]);
-                if (cost < min_cost) {
-                    min_cost = cost;
-                    last_city = city;
-                }
-            }
-            
-            int curr_mask = final_mask;
-            int curr_city = last_city;
-            
-            while (curr_city != -1) {
-                path.push_back(cluster.cities[curr_city]);
-                int prev_city = next[curr_mask][curr_city];
-                if (prev_city == -1) break;
-                curr_mask ^= (1 << curr_city);
-                curr_city = prev_city;
-            }
-            
-            std::reverse(path.begin(), path.end());
-            path.push_back(path[0]);  // 순환 경로 완성
-            
-            cluster.optimized_path = path;
-        }
+        std::cerr << "   Solving TSP for cluster " << cluster_idx 
+                  << " (size: " << cluster.cities.size() << ")...\n";
         
-        std::cout << "   Cluster " << cluster_idx << " optimized path: ";
-        for (int city : cluster.optimized_path) {
-            std::cout << city << " ";
+        // 새로운 solve_cluster_tsp 함수를 사용하여 경로 계산
+        cluster.optimized_path = solve_cluster_tsp(cluster);
+        
+        // 경로가 순환하도록 시작점을 마지막에 추가
+        if (!cluster.optimized_path.empty()) {
+            cluster.optimized_path.push_back(cluster.optimized_path[0]);
         }
-        std::cout << "\n";
     }
 }
 
@@ -306,8 +246,9 @@ std::vector<Point> HylosTSP::initialize_centroids(int k) {
     // Use k-means++ initialization
     std::vector<double> distances(cities_.size(), std::numeric_limits<double>::max());
     
-    // Choose first centroid randomly
-    int first_idx = rand() % cities_.size();
+    // Choose first centroid randomly using modern C++ random
+    std::uniform_int_distribution<int> dist(0, cities_.size() - 1);
+    int first_idx = dist(gen);
     centroids.push_back(cities_[first_idx]);
     
     // Choose remaining centroids
@@ -324,8 +265,9 @@ std::vector<Point> HylosTSP::initialize_centroids(int k) {
         // Calculate sum for probability distribution
         double sum = std::accumulate(distances.begin(), distances.end(), 0.0);
         
-        // Choose next centroid with probability proportional to distance
-        double r = (double)rand() / RAND_MAX * sum;
+        // Choose next centroid with probability proportional to distance using modern C++ random
+        std::uniform_real_distribution<double> real_dist(0.0, sum);
+        double r = real_dist(gen);
         double cumsum = 0.0;
         int chosen_idx = 0;
         for (size_t j = 0; j < cities_.size(); j++) {
@@ -389,17 +331,12 @@ bool HylosTSP::has_converged(const std::vector<Point>& old_centroids,
     return true;
 }
 
-void HylosTSP::kmeans_clustering(int k, int max_iterations) {
+void HylosTSP::kmeans_clustering(const int k, const int MAX_SIZE, int max_iterations) {
     clusters_.clear();
     clusters_.resize(k);
     
-    // Initialize centroids by selecting k evenly spaced cities
-    std::vector<Point> centroids;
-    int step = cities_.size() / k;
-    for (int i = 0; i < k; i++) {
-        centroids.push_back(cities_[i * step]);
-    }
-    
+    // Initialize centroids using k-means++
+    std::vector<Point> centroids = initialize_centroids(k);
     std::vector<int> assignments(cities_.size(), -1);
     std::vector<std::vector<int>> cluster_cities(k);
     
@@ -449,28 +386,30 @@ void HylosTSP::kmeans_clustering(int k, int max_iterations) {
         }
     }
     
-    // Split large clusters and merge small ones
-    const int MAX_SIZE = 20;
-    const int MIN_SIZE = 2;
-    std::vector<std::vector<int>> new_clusters;
+    // Split large clusters
+    std::vector<Cluster> final_clusters;
     
-    for (const auto& cluster : cluster_cities) {
-        if (cluster.size() < MIN_SIZE) continue;  // Will handle small clusters later
+    for (const auto& cities : cluster_cities) {
+        if (cities.empty()) continue;
         
-        if (cluster.size() <= MAX_SIZE) {
-            new_clusters.push_back(cluster);
+        if (cities.size() <= MAX_SIZE) {
+            // Add cluster as is
+            Cluster cluster;
+            cluster.cities = cities;
+            final_clusters.push_back(cluster);
         } else {
-            // Split large cluster based on distance from centroid
+            // Split large cluster based on distances
             std::vector<std::pair<double, int>> distances;
             Point center = {0, 0};
-            for (int city : cluster) {
+            for (int city : cities) {
                 center.x += cities_[city].x;
                 center.y += cities_[city].y;
             }
-            center.x /= cluster.size();
-            center.y /= cluster.size();
+            center.x /= cities.size();
+            center.y /= cities.size();
             
-            for (int city : cluster) {
+            // Calculate distances from center
+            for (int city : cities) {
                 double dist = euclideanDistance(cities_[city], center);
                 distances.push_back({dist, city});
             }
@@ -479,63 +418,67 @@ void HylosTSP::kmeans_clustering(int k, int max_iterations) {
             std::sort(distances.begin(), distances.end());
             
             // Create new clusters of size MAX_SIZE
-            std::vector<int> current_cluster;
+            Cluster current_cluster;
             for (const auto& [dist, city] : distances) {
-                current_cluster.push_back(city);
-                if (current_cluster.size() == MAX_SIZE) {
-                    new_clusters.push_back(current_cluster);
-                    current_cluster.clear();
+                current_cluster.cities.push_back(city);
+                if (current_cluster.cities.size() == MAX_SIZE) {
+                    final_clusters.push_back(current_cluster);
+                    current_cluster = Cluster();
                 }
             }
             
             // Add remaining cities if any
-            if (!current_cluster.empty()) {
-                new_clusters.push_back(current_cluster);
+            if (!current_cluster.cities.empty()) {
+                final_clusters.push_back(current_cluster);
             }
         }
     }
     
-    // Handle small clusters by merging them with the nearest cluster
-    for (const auto& cluster : cluster_cities) {
-        if (cluster.size() < MIN_SIZE) {
-            for (int city : cluster) {
-                double min_dist = std::numeric_limits<double>::max();
-                size_t best_cluster = 0;
-                
-                // Find nearest cluster that has room
-                for (size_t i = 0; i < new_clusters.size(); i++) {
-                    if (new_clusters[i].size() >= MAX_SIZE) continue;
-                    
-                    Point center = {0, 0};
-                    for (int c : new_clusters[i]) {
-                        center.x += cities_[c].x;
-                        center.y += cities_[c].y;
-                    }
-                    center.x /= new_clusters[i].size();
-                    center.y /= new_clusters[i].size();
-                    
-                    double dist = euclideanDistance(cities_[city], center);
-                    if (dist < min_dist) {
-                        min_dist = dist;
-                        best_cluster = i;
-                    }
-                }
-                
-                if (new_clusters[best_cluster].size() < MAX_SIZE) {
-                    new_clusters[best_cluster].push_back(city);
-                }
+    clusters_ = final_clusters;
+    
+    // Verify no duplicates
+    std::vector<bool> assigned(cities_.size(), false);
+    for (const auto& cluster : clusters_) {
+        for (int city : cluster.cities) {
+            if (assigned[city]) {
+                debug_print("Error: City " + std::to_string(city) + " is assigned to multiple clusters!\n");
             }
+            assigned[city] = true;
         }
     }
     
-    // Create final clusters
-    clusters_.clear();
-    for (const auto& cities : new_clusters) {
-        if (!cities.empty()) {
-            Cluster cluster;
-            cluster.cities = cities;
-            clusters_.push_back(cluster);
+    // Check for unassigned cities
+    std::vector<int> unassigned;
+    for (size_t i = 0; i < cities_.size(); i++) {
+        if (!assigned[i]) {
+            unassigned.push_back(i);
         }
+    }
+    
+    // Add unassigned cities to nearest cluster that has room
+    for (int city : unassigned) {
+        double min_dist = std::numeric_limits<double>::max();
+        size_t best_cluster = 0;
+        
+        for (size_t i = 0; i < clusters_.size(); i++) {
+            if (clusters_[i].cities.size() >= MAX_SIZE) continue;
+            
+            Point center = {0, 0};
+            for (int c : clusters_[i].cities) {
+                center.x += cities_[c].x;
+                center.y += cities_[c].y;
+            }
+            center.x /= clusters_[i].cities.size();
+            center.y /= clusters_[i].cities.size();
+            
+            double dist = euclideanDistance(cities_[city], center);
+            if (dist < min_dist) {
+                min_dist = dist;
+                best_cluster = i;
+            }
+        }
+        
+        clusters_[best_cluster].cities.push_back(city);
     }
 }
 
@@ -556,14 +499,14 @@ std::vector<int> HylosTSP::determine_cluster_order() {
         centroids.push_back(get_cluster_centroid(cluster));
     }
     
-    if (clusters_.size() <= 20) {
+    if (clusters_.size() <= 22) {
         // Use Held-Karp for small number of clusters
-        std::cout << "   Using Held-Karp for cluster ordering\n";
+        std::cerr << "   Using Held-Karp for cluster ordering (size: " << clusters_.size() << ")\n";
         return heldkarpPath(centroids);
     } else {
-        // Use MST 2-approximation for larger number of clusters
-        std::cout << "   Using MST 2-approximation for cluster ordering\n";
-        return mst2approx(centroids);
+        // Use Christofides for larger number of clusters
+        std::cerr << "   Using Christofides for cluster ordering (size: " << clusters_.size() << ")\n";
+        return christofidesPath(centroids);
     }
 }
 
@@ -581,6 +524,7 @@ std::pair<int, int> HylosTSP::find_best_entry_exit_points(
         int curr = cluster.optimized_path[i];
         int next = cluster.optimized_path[(i + 1) % (cluster.optimized_path.size() - 1)];
 
+        // 실제 도시 좌표를 사용하여 거리 계산
         double dist1 = euclideanDistance(cities_[curr], prev_centroid) +
                       euclideanDistance(cities_[next], next_centroid);
         
@@ -599,13 +543,16 @@ std::pair<int, int> HylosTSP::find_best_entry_exit_points(
         }
     }
 
+    // 경로 재정렬
+    std::vector<int> new_path;
     int entry_pos = -1, exit_pos = -1;
+    
+    // 실제 도시 인덱스로 위치 찾기
     for (size_t i = 0; i < cluster.optimized_path.size() - 1; i++) {
         if (cluster.optimized_path[i] == best_entry) entry_pos = i;
         if (cluster.optimized_path[i] == best_exit) exit_pos = i;
     }
 
-    std::vector<int> new_path;
     const int n = cluster.optimized_path.size() - 1;  // 마지막 점은 첫 점과 같으므로 제외
 
     bool entry_at_start = (entry_pos == 0);
@@ -613,61 +560,47 @@ std::pair<int, int> HylosTSP::find_best_entry_exit_points(
     bool exit_at_start = (exit_pos == 0);
     bool exit_at_end = (exit_pos == n-1);
 
-    // Case 1: a, ..., b (entry가 시작점이고 exit가 끝점인 경우)
+    // 경로 재구성 (기존 로직 유지)
     if (entry_at_start && exit_at_end) {
         for (int i = 0; i < n; i++) {
             new_path.push_back(cluster.optimized_path[i]);
         }
-    }
-    // Case 2: b, ..., a (exit가 시작점이고 entry가 끝점인 경우)
-    else if (exit_at_start && entry_at_end) {
+    } else if (exit_at_start && entry_at_end) {
         for (int i = n-1; i >= 0; i--) {
             new_path.push_back(cluster.optimized_path[i]);
         }
-    }
-    // Case 3: ...1, a, b, ...2 (entry와 exit가 연속)
-    else if (entry_pos + 1 == exit_pos) {
-        new_path.push_back(best_entry);  // a
+    } else if (entry_pos + 1 == exit_pos) {
+        new_path.push_back(best_entry);
         
-        // reverse(...1)
         for (int i = entry_pos - 1; i >= 0; i--) {
             new_path.push_back(cluster.optimized_path[i]);
         }
         
-        // reverse(...2)
         for (int i = n-1; i > exit_pos; i--) {
             new_path.push_back(cluster.optimized_path[i]);
         }
         
-        new_path.push_back(best_exit);  // b
-    }
-    // Case 4: ...1, b, a, ...2 (exit와 entry가 연속)
-    else if (exit_pos + 1 == entry_pos) {
-        new_path.push_back(best_entry);  // a
+        new_path.push_back(best_exit);
+    } else if (exit_pos + 1 == entry_pos) {
+        new_path.push_back(best_entry);
         
-        // ...2
         for (int i = entry_pos + 1; i < n; i++) {
             new_path.push_back(cluster.optimized_path[i]);
         }
         
-        // ...1
         for (int i = 0; i < exit_pos; i++) {
             new_path.push_back(cluster.optimized_path[i]);
         }
         
-        new_path.push_back(best_exit);  // b
-    }
-    // 일반적인 경우: 가까운 쪽으로 이동
-    else {
+        new_path.push_back(best_exit);
+    } else {
         new_path.push_back(best_entry);
         
         if (entry_pos < exit_pos) {
-            // entry -> ... -> exit 순서로 있는 경우
             for (int i = entry_pos + 1; i <= exit_pos; i++) {
                 new_path.push_back(cluster.optimized_path[i]);
             }
         } else {
-            // exit -> ... -> entry 순서로 있는 경우
             for (int i = entry_pos - 1; i >= 0; i--) {
                 new_path.push_back(cluster.optimized_path[i]);
             }
@@ -679,11 +612,11 @@ std::pair<int, int> HylosTSP::find_best_entry_exit_points(
 
     cluster.optimized_path = new_path;
 
-    std::cout << "   Reordered path: ";
+    std::cerr << "   Reordered path: ";
     for (int city : cluster.optimized_path) {
-        std::cout << city << " ";
+        std::cerr << city << " ";
     }
-    std::cout << "\n";
+    std::cerr << "\n";
 
     return {best_entry, best_exit};
 }
@@ -744,4 +677,230 @@ std::vector<int> HylosTSP::heldkarpPath(const std::vector<Point>& points) {
     
     std::reverse(path.begin(), path.end());
     return path;
+}
+
+DBSCANParams HylosTSP::find_optimal_eps_and_min_points() {
+    const int n = cities_.size();
+    std::vector<std::vector<double>> distance_matrix(n, std::vector<double>(n));
+    
+    // 1. 모든 도시 쌍 간의 거리 계산
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            double dist = euclideanDistance(cities_[i], cities_[j]);
+            distance_matrix[i][j] = distance_matrix[j][i] = dist;
+        }
+    }
+    
+    // 2. 각 점에 대해 k-nearest neighbor 거리 계산 (k = 1 to 30)
+    const int max_k = std::min(30, n-1);
+    std::vector<std::vector<double>> k_distances(n, std::vector<double>(max_k));
+    
+    for (int i = 0; i < n; i++) {
+        std::vector<double> distances = distance_matrix[i];
+        std::sort(distances.begin(), distances.end());
+        for (int k = 0; k < max_k; k++) {
+            k_distances[i][k] = distances[k + 1];  // k+1 because first is always 0 (self)
+        }
+    }
+    
+    // 3. k-distance 그래프의 "elbow point" 찾기
+    std::vector<double> avg_k_distances(max_k);
+    for (int k = 0; k < max_k; k++) {
+        double sum = 0;
+        for (int i = 0; i < n; i++) {
+            sum += k_distances[i][k];
+        }
+        avg_k_distances[k] = sum / n;
+    }
+    
+    // 4. 기울기 변화가 가장 큰 지점 찾기 (elbow point)
+    int optimal_k = 4;  // 기본값
+    double max_angle_change = 0;
+    
+    for (int k = 1; k < max_k - 1; k++) {
+        double prev_slope = avg_k_distances[k] - avg_k_distances[k-1];
+        double next_slope = avg_k_distances[k+1] - avg_k_distances[k];
+        double angle_change = std::abs(std::atan(next_slope) - std::atan(prev_slope));
+        
+        if (angle_change > max_angle_change) {
+            max_angle_change = angle_change;
+            optimal_k = k;
+        }
+    }
+    
+    // 5. optimal_k를 사용하여 eps 계산
+    double eps = 0;
+    for (int i = 0; i < n; i++) {
+        eps += k_distances[i][optimal_k];
+    }
+    eps /= n;
+    
+    // 6. min_points 결정
+    // min_points는 optimal_k + 1로 설정 (자기 자신 포함)
+    int min_points = optimal_k + 1;
+    
+    // 7. 제한 조건 적용
+    min_points = std::min(std::max(min_points, 4), 20);  // 4 ≤ min_points ≤ 20
+    
+    std::cerr << "   Optimal parameters found:\n"
+              << "     k-distance elbow point: " << optimal_k << "\n"
+              << "     eps: " << eps << "\n"
+              << "     min_points: " << min_points << "\n";
+    
+    return {eps, min_points};
+}
+
+void HylosTSP::cluster(ClusteringMethod method, double eps, int min_points) {
+    switch (method) {
+        case ClusteringMethod::KMEANS: {
+            // n이 작을 때는 더 작은 클러스터를, n이 클 때는 더 큰 클러스터를 만듭니다.
+            // sqrt(n)을 기준으로 MAX_SIZE를 조정합니다.
+            const int n = cities_.size();
+            const int sqrt_n = static_cast<int>(std::sqrt(n));
+            
+            // MAX_SIZE는 sqrt(n)의 2~3배 정도로 설정
+            // 단, 최소 22으로 제한
+            const int MAX_SIZE = std::max(22, 2 * sqrt_n);
+            
+            // k는 n/MAX_SIZE를 올림한 값으로 설정
+            const int k = (n + MAX_SIZE - 1) / MAX_SIZE;  // ceiling division
+            
+            std::cerr << "   Total cities: " << n << "\n"
+                      << "   MAX_SIZE: " << MAX_SIZE << "\n"
+                      << "   Number of clusters (k): " << k << "\n";
+            
+            kmeans_clustering(k, MAX_SIZE);
+            break;
+        }
+        case ClusteringMethod::DBSCAN: {
+            auto params = find_optimal_eps_and_min_points();
+            std::cerr << "   Using DBSCAN with:\n"
+                      << "     eps=" << params.eps << "\n"
+                      << "     min_points=" << params.min_points << "\n";
+            dbscan_clustering(params.eps, params.min_points);
+            break;
+        }
+    }
+}
+
+void HylosTSP::dbscan_clustering(double eps, int min_points) {
+    std::cerr << "Starting DBSCAN clustering with eps=" << eps 
+              << ", min_points=" << min_points << "...\n";
+              
+    clusters_.clear();
+    std::vector<bool> visited(cities_.size(), false);
+    std::vector<int> point_labels(cities_.size(), -1);  // -1: unassigned, -2: noise, >=0: cluster index
+    
+    int cluster_idx = 0;
+    for (size_t i = 0; i < cities_.size(); i++) {
+        if (visited[i] || point_labels[i] != -1) continue;
+        
+        visited[i] = true;
+        std::vector<int> neighbors = region_query(i, eps);
+        
+        if (neighbors.size() < min_points) {
+            // Mark as noise
+            point_labels[i] = -2;
+            continue;
+        }
+        
+        // Start a new cluster
+        Cluster new_cluster;
+        new_cluster.cities.push_back(i);
+        point_labels[i] = cluster_idx;
+        
+        // Process neighbors
+        std::queue<int> queue;
+        for (int neighbor : neighbors) {
+            if (!visited[neighbor]) {
+                queue.push(neighbor);
+            }
+        }
+        
+        while (!queue.empty()) {
+            int current = queue.front();
+            queue.pop();
+            
+            if (!visited[current]) {
+                visited[current] = true;
+                std::vector<int> current_neighbors = region_query(current, eps);
+                
+                if (current_neighbors.size() >= min_points) {
+                    for (int neighbor : current_neighbors) {
+                        if (!visited[neighbor]) {
+                            queue.push(neighbor);
+                        }
+                    }
+                }
+            }
+            
+            // Add to cluster if not already in another cluster
+            if (point_labels[current] == -1) {
+                new_cluster.cities.push_back(current);
+                point_labels[current] = cluster_idx;
+            }
+        }
+        
+        clusters_.push_back(new_cluster);
+        cluster_idx++;
+    }
+    
+    // Handle noise points: create singleton clusters
+    for (size_t i = 0; i < cities_.size(); i++) {
+        if (point_labels[i] == -2 || point_labels[i] == -1) {
+            Cluster noise_cluster;
+            noise_cluster.cities.push_back(i);
+            clusters_.push_back(noise_cluster);
+        }
+    }
+    
+    // Print cluster information
+    std::cerr << "Created " << clusters_.size() << " clusters:\n";
+    for (size_t i = 0; i < clusters_.size(); i++) {
+        std::cerr << "Cluster " << i << " size: " << clusters_[i].cities.size() << "\n";
+    }
+}
+
+std::vector<int> HylosTSP::region_query(int point_idx, double eps) const {
+    std::vector<int> neighbors;
+    for (size_t i = 0; i < cities_.size(); i++) {
+        if (i != point_idx && 
+            euclideanDistance(cities_[point_idx], cities_[i]) <= eps) {
+            neighbors.push_back(i);
+        }
+    }
+    return neighbors;
+}
+
+std::vector<int> HylosTSP::solve_cluster_tsp(const Cluster& cluster) {
+    std::vector<Point> cluster_points;
+    // 원래 도시 인덱스를 저장
+    std::vector<int> original_indices = cluster.cities;
+    
+    for (int city_idx : cluster.cities) {
+        cluster_points.push_back(cities_[city_idx]);
+    }
+    
+    std::vector<int> local_path;
+    if (cluster.cities.size() <= 22) {
+        std::cerr << "   Using Held-Karp for cluster size " << cluster.cities.size() << "\n";
+        local_path = heldkarpPath(cluster_points);
+    } else {
+        std::cerr << "   Using Christofides for cluster size " << cluster.cities.size() << "\n";
+        local_path = christofidesPath(cluster_points);
+    }
+    
+    // 로컬 인덱스를 원래 도시 인덱스로 변환
+    std::vector<int> global_path;
+    for (int local_idx : local_path) {
+        global_path.push_back(original_indices[local_idx]);
+    }
+    
+    std::cerr << "   Path: ";
+    for (int city : global_path) {
+        std::cerr << city << " ";
+    }
+    std::cerr << "\n";
+    
+    return global_path;
 } 
