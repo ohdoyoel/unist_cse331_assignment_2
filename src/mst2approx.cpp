@@ -10,12 +10,13 @@
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <dataset.tsp>" << endl;
+    if (argc != 3) {
+        cerr << "Usage: " << argv[0] << " <input_file> <tour_file>" << endl;
         return 1;
     }
 
     string tspFile = argv[1];
+    string gtTourFile = argv[2];
     string datasetName = tspFile.substr(tspFile.find_last_of("/") + 1);
     datasetName = datasetName.substr(0, datasetName.find_last_of("."));
 
@@ -37,6 +38,10 @@ int main(int argc, char* argv[]) {
 
     // Save tour
     ofstream out("result/mst2approx_" + datasetName + ".tour");
+    if (!out.is_open()) {
+        cerr << "Failed to create output file" << endl;
+        return 1;
+    }
     out << "NAME : mst2approx_" << datasetName << "\nTYPE : TOUR\nDIMENSION : " << coords.size() << "\nTOUR_SECTION\n";
     for (int idx : path)
         out << (idx + 1) << "\n";
@@ -45,26 +50,18 @@ int main(int argc, char* argv[]) {
 
     // Compute cost
     double cost = pathCost(path, coords);
+    if (cost < 0) {
+        cerr << "Invalid path cost" << endl;
+        return 1;
+    }
 
     // Compare with ground truth tour
-    string gtTourFile = "data/" + datasetName + ".tour";
     double gtCost = tourPathCost(coords, gtTourFile);
 
     // Compute gap
-    int gapCount = 0;
-    if (gtCost > 0) {
-        gapCount = computePermutationGap(path, gtTourFile);
-    }
+    int gapCount = computePermutationGap(path, gtTourFile);
 
-    cout << "MST-based 2-approximation Tour cost: " << cost << endl;
-    cout << "Elapsed time: " << elapsed << " sec" << endl;
-    if (gtCost > 0)
-        cout << "Optimal Tour cost: " << gtCost 
-        << "\nApproximation Quality: " << (gtCost / cost * 100.0) << "%"
-        << "\nGap: " << gapCount << " / " << coords.size()
-        << endl;
-    else
-        cout << "Ground-truth tour not found or invalid." << endl;
+    printResults("MST-based 2-approximation", cost, elapsed, gtCost, gapCount);
 
     return 0;
 }
