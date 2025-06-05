@@ -1,0 +1,6 @@
+
+Hylos Statistics for mona-lisa100k:
+Time_mean=8.057791
+Time_std=2.457504
+Cost_mean=7082120.00
+Cost_std=16478.30

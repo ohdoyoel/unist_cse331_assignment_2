@@ -1,0 +1,32 @@
+Hylos Statistics:
+
+
+ulysses16:
+Time: 0.043268 ± 0.002866 sec
+Cost: 73.99 ± 0.00
+Approximation ratio: 0.998366 ± 0.000000
+Gap: 11.0 ± 0.0
+
+ulysses22:
+Time: 4.348854 ± 0.311893 sec
+Cost: 75.31 ± 0.00
+Approximation ratio: 0.995302 ± 0.000000
+Gap: 3.0 ± 0.0
+
+a280:
+Time: 1.398360 ± 1.836770 sec
+Cost: 3751.25 ± 110.63
+Approximation ratio: 1.450170 ± 0.042768
+Gap: 262.9 ± 3.3
+
+xql662:
+Time: 1.830262 ± 2.292609 sec
+Cost: 3647.75 ± 126.82
+Approximation ratio: 1.427377 ± 0.049626
+Gap: 643.5 ± 2.4
+
+kz9976:
+Time: 2.897765 ± 2.361282 sec
+Cost: 1417675.00 ± 11124.89
+Approximation ratio: 1.335067 ± 0.010476
+Gap: 9935.9 ± 6.4
