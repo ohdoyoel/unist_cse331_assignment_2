@@ -66,21 +66,28 @@ vector<int> find_augmenting_path(vector<BlossomNode>& nodes, int start, int end)
     return vector<int>();  // Return empty path if no valid path found
 }
 
-// Edmonds' Blossom Algorithm O(n^4)
-vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
-    if (coords.empty()) return {};
-    
-    int n = coords.size();
-    vector<BlossomNode> nodes(n);
+// Helper function to get sorted edges
+vector<Edge> getSortedEdges(const vector<Point>& coords) {
     vector<Edge> edges;
-    
-    // Create edges with weights
+    int n = coords.size();
     for (int i = 0; i < n; i++) {
         for (int j = i + 1; j < n; j++) {
             double weight = euclideanDistance(coords[i], coords[j]);
             edges.emplace_back(i, j, weight);
         }
     }
+    sort(edges.begin(), edges.end(), 
+         [](const Edge& a, const Edge& b) { return a.weight < b.weight; });
+    return edges;
+}
+
+// Edmonds' Blossom Algorithm O(n^4)
+vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
+    if (coords.empty()) return {};
+    
+    int n = coords.size();
+    vector<BlossomNode> nodes(n);
+    vector<Edge> edges = getSortedEdges(coords);  // Use sorted edges
     
     vector<pair<int, int>> matching;
     
@@ -93,6 +100,7 @@ vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
         for (auto& node : nodes) {
             node.label = 0;
             node.parent = -1;
+            node.blossom_root = -1;  // Reset blossom root
         }
         
         int exposed = -1;
@@ -115,8 +123,9 @@ vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
             int u = q.front();
             q.pop();
             
-            for (const Edge& e : edges) {
-                int v = (e.u == u) ? e.v : (e.u == u ? v : -1);
+            for (const Edge& e : edges) {  // Process edges in sorted order
+                // Fix the bug in vertex selection
+                int v = (e.u == u) ? e.v : (e.v == u ? e.u : -1);
                 if (v == -1) continue;
                 
                 int v_root = find_blossom_root(nodes, v);
@@ -169,11 +178,8 @@ vector<pair<int, int>> blossom_edmonds(const vector<Point>& coords) {
 // Gabow's improved Blossom Algorithm O(n^3)
 vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
     if (coords.empty()) {
-        cerr << "[DEBUG] Empty coordinates in blossom_gabow" << endl;
         return {};
     }
-
-    cerr << "[DEBUG] Starting Gabow's algorithm with " << coords.size() << " vertices" << endl;
     
     int n = coords.size();
     vector<BlossomNode> nodes(n);
@@ -187,7 +193,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
             }
         }
     } catch (const exception& e) {
-        cerr << "[DEBUG] Exception in weight matrix initialization: " << e.what() << endl;
         return {};
     }
     
@@ -207,8 +212,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
     const int MAX_ITERATIONS = n * n * n;  // O(n^3) bound
     
     while (iterations++ < MAX_ITERATIONS) {
-        cerr << "[DEBUG] Iteration " << iterations << " of matching algorithm" << endl;
-        
         // Reset labels and find an exposed vertex
         for (auto& node : nodes) {
             node.label = 0;
@@ -225,11 +228,8 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
         }
         
         if (exposed == -1) {
-            cerr << "[DEBUG] Perfect matching found" << endl;
             break;  // Perfect matching found
         }
-        
-        cerr << "[DEBUG] Processing exposed vertex " << exposed << endl;
         
         // Priority queue for efficient edge selection
         using pqtype = tuple<double, int, int>;  // (slack, u, v)
@@ -260,7 +260,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
             
             if (nodes[v].label == 0) {  // v is unlabeled
                 if (nodes[v].mate == -1) {
-                    cerr << "[DEBUG] Found augmenting path to " << v << endl;
                     // Found augmenting path
                     nodes[v].parent = u;
                     vector<int> path = find_augmenting_path(nodes, exposed, v);
@@ -272,7 +271,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
                                 nodes[path[i]].mate = path[i + 1];
                                 nodes[path[i + 1]].mate = path[i];
                             } else {
-                                cerr << "[DEBUG] Invalid path indices: " << path[i] << ", " << path[i+1] << endl;
                                 return {};
                             }
                         }
@@ -300,7 +298,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
         }
         
         if (!augmented) {
-            cerr << "[DEBUG] Failed to augment matching in iteration " << iterations << endl;
             // Update dual variables
             vector<double> delta(n, numeric_limits<double>::max());
             for (int i = 0; i < n; i++) {
@@ -310,9 +307,7 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
                             delta[i] = min(delta[i], (weights[i][j] - nodes[i].dual - nodes[j].dual) / 2);
                         }
                     }
-
                 }
-
             }
             
             double min_delta = numeric_limits<double>::max();
@@ -321,7 +316,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
             }
             
             if (min_delta == numeric_limits<double>::max()) {
-                cerr << "[DEBUG] No valid dual adjustment possible" << endl;
                 break;
             }
             
@@ -334,7 +328,6 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
     }
     
     if (iterations >= MAX_ITERATIONS) {
-        cerr << "[DEBUG] Maximum iterations reached in blossom_gabow" << endl;
         return {};
     }
     
@@ -345,14 +338,12 @@ vector<pair<int, int>> blossom_gabow(const vector<Point>& coords) {
         }
     }
     
-    cerr << "[DEBUG] Gabow's algorithm completed with " << matching.size() << " matched pairs" << endl;
     return matching;
 }
 
 vector<Point> readTSPLib(const string& filename) {
     ifstream file(filename);
     if (!file.is_open()) {
-        cerr << "Cannot open file: " << filename << endl;
         return {};
     }
 
@@ -426,8 +417,6 @@ vector<pair<int, int>> minimumSpanningTree(const vector<Point>& coords) {
 vector<pair<int, int>> greedyPerfectMatching(const vector<int>& odd_vertices, const vector<Point>& coords) {
     if (odd_vertices.empty()) return {};
     
-    cerr << "[DEBUG] Starting greedy matching with " << odd_vertices.size() << " vertices" << endl;
-    
     vector<pair<int, int>> matching;
     vector<bool> used(odd_vertices.size(), false);
 
@@ -453,19 +442,15 @@ vector<pair<int, int>> greedyPerfectMatching(const vector<int>& odd_vertices, co
             // Store the original vertex indices from odd_vertices
             matching.emplace_back(odd_vertices[i], odd_vertices[best_j]);
             used[i] = used[best_j] = true;
-            cerr << "[DEBUG] Matched vertices " << odd_vertices[i] << " and " << odd_vertices[best_j] 
-                 << " (distance: " << best_dist << ")" << endl;
         }
     }
 
-    cerr << "[DEBUG] Greedy matching completed with " << matching.size() << " pairs" << endl;
     return matching;
 }
 
 // Euler tour using Hierholzer's Algorithm
 vector<int> eulerianTour(multimap<int, int>& graph, int start) {
     if (graph.empty()) {
-        cerr << "Empty graph in eulerianTour" << endl;
         return {};
     }
 
@@ -481,7 +466,6 @@ vector<int> eulerianTour(multimap<int, int>& graph, int start) {
     
     // Verify start vertex exists in graph
     if (vertices.find(start) == vertices.end()) {
-        cerr << "Start vertex " << start << " not found in graph" << endl;
         return {};
     }
     
@@ -522,7 +506,6 @@ vector<int> eulerianTour(multimap<int, int>& graph, int start) {
         
         // Safety check: ensure we're not stuck
         if (edges_used > total_edges) {
-            cerr << "Possible infinite loop in eulerianTour" << endl;
             return {};
         }
     }
@@ -530,7 +513,6 @@ vector<int> eulerianTour(multimap<int, int>& graph, int start) {
     // Verify the tour contains all vertices
     set<int> tour_vertices(tour.begin(), tour.end());
     if (tour_vertices != vertices) {
-        cerr << "Tour does not contain all vertices" << endl;
         return {};
     }
     
@@ -554,13 +536,13 @@ double pathCost(const vector<int>& path, const vector<Point>& coords) {
     for (size_t i = 0; i + 1 < path.size(); ++i) {
         cost += euclideanDistance(coords[path[i]], coords[path[i + 1]]);
     }
+    cost += euclideanDistance(coords[path[path.size() - 1]], coords[path[0]]);
     return cost;
 }
 
 vector<int> parseTourFile(const string& tourFile) {
     ifstream in(tourFile);
     if (!in.is_open()) {
-        cerr << "Cannot open ground-truth tour file: " << tourFile << endl;
         return {};
     }
 
@@ -588,7 +570,6 @@ double tourPathCost(const vector<Point>& coords, const string& tourFile) {
     vector<int> gtPath = parseTourFile(tourFile);
 
     if (gtPath.size() != coords.size()) {
-        cerr << "tourPathCost() : Mismatch in tour length: expected " << coords.size() << ", got " << gtPath.size() << endl;
         return -1;
     }
 
@@ -599,7 +580,6 @@ int computePermutationGap(const vector<int>& result, const string& tourFile) {
     vector<int> optimal = parseTourFile(tourFile);
 
     if (optimal.size() != result.size()) {
-        cerr << "computePermutationGap() : Mismatch in tour length: expected " << optimal.size() << ", got " << result.size() << endl;
         return -1;
     }
     
@@ -633,14 +613,12 @@ int computePermutationGap(const vector<int>& result, const string& tourFile) {
 // Christofides Algorithm for TSP
 vector<int> christofidesPath(const vector<Point>& coords) {
     if (coords.empty()) {
-        cerr << "[DEBUG] Empty coordinates provided" << endl;
         return {};
     }
     
     // Get MST
     auto mst = minimumSpanningTree(coords);
     if (mst.empty()) {
-        cerr << "[DEBUG] Failed to generate MST" << endl;
         return vector<int>(coords.size());
     }
 
@@ -648,7 +626,6 @@ vector<int> christofidesPath(const vector<Point>& coords) {
     map<int, int> degree;
     for (auto& e : mst) {
         if (e.first >= coords.size() || e.second >= coords.size()) {
-            cerr << "[DEBUG] Invalid MST edge: " << e.first << ", " << e.second << endl;
             return vector<int>(coords.size());
         }
         degree[e.first]++;
@@ -661,21 +638,16 @@ vector<int> christofidesPath(const vector<Point>& coords) {
             if (v >= 0 && v < coords.size()) {
                 odd.push_back(v);
             } else {
-                cerr << "[DEBUG] Invalid vertex index in degree map: " << v << endl;
                 return vector<int>(coords.size());
             }
         }
     }
 
-    cerr << "[DEBUG] Found " << odd.size() << " vertices with odd degree" << endl;
-
     // Choose matching algorithm based on problem size
     vector<pair<int, int>> matching;
     if (odd.size() > 10000) {
-        cerr << "[DEBUG] Large graph detected (" << odd.size() << " vertices), using greedy matching" << endl;
         matching = greedyPerfectMatching(odd, coords);
     } else {
-        cerr << "[DEBUG] Using Gabow's algorithm for perfect matching" << endl;
         // Create subgraph for Gabow's algorithm
         vector<Point> odd_vertices;
         for (int idx : odd) {
@@ -689,13 +661,10 @@ vector<int> christofidesPath(const vector<Point>& coords) {
             if (u < odd.size() && v < odd.size()) {
                 matching.emplace_back(odd[u], odd[v]);
             } else {
-                cerr << "[DEBUG] Invalid matching indices from Gabow: " << u << ", " << v << endl;
                 return vector<int>(coords.size());
             }
         }
     }
-
-    cerr << "[DEBUG] Found " << matching.size() << " edges in perfect matching" << endl;
 
     // Combine MST and matching edges into multigraph
     multimap<int, int> multigraph;
@@ -711,12 +680,10 @@ vector<int> christofidesPath(const vector<Point>& coords) {
             multigraph.insert({v, u});
         }
     } catch (const exception& e) {
-        cerr << "[DEBUG] Exception while building multigraph: " << e.what() << endl;
         return vector<int>(coords.size());
     }
 
     if (multigraph.empty()) {
-        cerr << "[DEBUG] Empty multigraph" << endl;
         return vector<int>(coords.size());
     }
 
@@ -724,28 +691,24 @@ vector<int> christofidesPath(const vector<Point>& coords) {
     try {
         auto euler = eulerianTour(multigraph, 0);
         if (euler.empty()) {
-            cerr << "[DEBUG] Empty Eulerian tour" << endl;
             return vector<int>(coords.size());
         }
         
         // Make Hamiltonian
         auto hamilton = makeHamiltonian(euler);
         if (hamilton.empty()) {
-            cerr << "[DEBUG] Empty Hamiltonian path" << endl;
             return vector<int>(coords.size());
         }
         
         // Verify path
         for (int v : hamilton) {
             if (v < 0 || v >= coords.size()) {
-                cerr << "[DEBUG] Invalid vertex in final path: " << v << endl;
                 return vector<int>(coords.size());
             }
         }
         
         return hamilton;
     } catch (const exception& e) {
-        cerr << "[DEBUG] Exception in final path construction: " << e.what() << endl;
         return vector<int>(coords.size());
     }
 }
@@ -847,5 +810,211 @@ vector<int> mst2approx(const vector<Point>& coords) {
     // tour.push_back(0);
     
     return tour;
+}
+
+// Christofides Algorithm with Edmonds' blossom matching
+vector<int> christofidesPath_edmonds(const vector<Point>& coords) {
+    if (coords.empty()) {
+        return {};
+    }
+    
+    // Get MST
+    auto mst = minimumSpanningTree(coords);
+    if (mst.empty()) {
+        return vector<int>(coords.size());
+    }
+
+    // Find vertices with odd degree
+    map<int, int> degree;
+    for (auto& e : mst) {
+        if (e.first >= coords.size() || e.second >= coords.size()) {
+            return vector<int>(coords.size());
+        }
+        degree[e.first]++;
+        degree[e.second]++;
+    }
+
+    vector<int> odd;
+    for (auto& [v, d] : degree) {
+        if (d % 2 == 1) {
+            if (v >= 0 && v < coords.size()) {
+                odd.push_back(v);
+            } else {
+                return vector<int>(coords.size());
+            }
+        }
+    }
+
+    // Choose matching algorithm based on problem size
+    vector<pair<int, int>> matching;
+    if (odd.size() > 10000) {
+        matching = greedyPerfectMatching(odd, coords);
+    } else {
+        // Create subgraph for Edmonds' algorithm
+        vector<Point> odd_vertices;
+        for (int idx : odd) {
+            odd_vertices.push_back(coords[idx]);
+        }
+        
+        auto edmonds_matching = blossom_edmonds(odd_vertices);
+        
+        // Convert Edmonds' matching indices back to original graph indices
+        for (auto [u, v] : edmonds_matching) {
+            if (u < odd.size() && v < odd.size()) {
+                matching.emplace_back(odd[u], odd[v]);
+            } else {
+                return vector<int>(coords.size());
+            }
+        }
+    }
+
+    // Combine MST and matching edges into multigraph
+    multimap<int, int> multigraph;
+    try {
+        for (auto& [u, v] : mst) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+        for (auto& [u, v] : matching) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+    } catch (const exception& e) {
+        return vector<int>(coords.size());
+    }
+
+    if (multigraph.empty()) {
+        return vector<int>(coords.size());
+    }
+
+    // Find Eulerian tour
+    try {
+        auto euler = eulerianTour(multigraph, 0);
+        if (euler.empty()) {
+            return vector<int>(coords.size());
+        }
+        
+        // Make Hamiltonian
+        auto hamilton = makeHamiltonian(euler);
+        if (hamilton.empty()) {
+            return vector<int>(coords.size());
+        }
+        
+        // Verify path
+        for (int v : hamilton) {
+            if (v < 0 || v >= coords.size()) {
+                return vector<int>(coords.size());
+            }
+        }
+        
+        return hamilton;
+    } catch (const exception& e) {
+        return vector<int>(coords.size());
+    }
+}
+
+// Christofides Algorithm with Gabow's blossom matching
+vector<int> christofidesPath_gabow(const vector<Point>& coords) {
+    if (coords.empty()) {
+        return {};
+    }
+    
+    // Get MST
+    auto mst = minimumSpanningTree(coords);
+    if (mst.empty()) {
+        return vector<int>(coords.size());
+    }
+
+    // Find vertices with odd degree
+    map<int, int> degree;
+    for (auto& e : mst) {
+        if (e.first >= coords.size() || e.second >= coords.size()) {
+            return vector<int>(coords.size());
+        }
+        degree[e.first]++;
+        degree[e.second]++;
+    }
+
+    vector<int> odd;
+    for (auto& [v, d] : degree) {
+        if (d % 2 == 1) {
+            if (v >= 0 && v < coords.size()) {
+                odd.push_back(v);
+            } else {
+                return vector<int>(coords.size());
+            }
+        }
+    }
+
+    // Choose matching algorithm based on problem size
+    vector<pair<int, int>> matching;
+    if (odd.size() > 10000) {
+        matching = greedyPerfectMatching(odd, coords);
+    } else {
+        // Create subgraph for Gabow's algorithm
+        vector<Point> odd_vertices;
+        for (int idx : odd) {
+            odd_vertices.push_back(coords[idx]);
+        }
+        
+        auto gabow_matching = blossom_gabow(odd_vertices);
+        
+        // Convert Gabow's matching indices back to original graph indices
+        for (auto [u, v] : gabow_matching) {
+            if (u < odd.size() && v < odd.size()) {
+                matching.emplace_back(odd[u], odd[v]);
+            } else {
+                return vector<int>(coords.size());
+            }
+        }
+    }
+
+    // Combine MST and matching edges into multigraph
+    multimap<int, int> multigraph;
+    try {
+        for (auto& [u, v] : mst) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+        for (auto& [u, v] : matching) {
+            if (u >= coords.size() || v >= coords.size()) continue;
+            multigraph.insert({u, v});
+            multigraph.insert({v, u});
+        }
+    } catch (const exception& e) {
+        return vector<int>(coords.size());
+    }
+
+    if (multigraph.empty()) {
+        return vector<int>(coords.size());
+    }
+
+    // Find Eulerian tour
+    try {
+        auto euler = eulerianTour(multigraph, 0);
+        if (euler.empty()) {
+            return vector<int>(coords.size());
+        }
+        
+        // Make Hamiltonian
+        auto hamilton = makeHamiltonian(euler);
+        if (hamilton.empty()) {
+            return vector<int>(coords.size());
+        }
+        
+        // Verify path
+        for (int v : hamilton) {
+            if (v < 0 || v >= coords.size()) {
+                return vector<int>(coords.size());
+            }
+        }
+        
+        return hamilton;
+    } catch (const exception& e) {
+        return vector<int>(coords.size());
+    }
 }
 
