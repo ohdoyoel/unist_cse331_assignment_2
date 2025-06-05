@@ -1,0 +1,6 @@
+
+Hylos Statistics for kz9976:
+Time_mean=1.467898
+Time_std=2.360035
+Cost_mean=1420807.00
+Cost_std=10398.36

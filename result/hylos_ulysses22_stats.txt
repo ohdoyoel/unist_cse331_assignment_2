@@ -1,0 +1,6 @@
+
+Hylos Statistics for ulysses22:
+Time_mean=0.089393
+Time_std=0.179044
+Cost_mean=76.48
+Cost_std=0.82

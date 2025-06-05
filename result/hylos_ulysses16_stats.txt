@@ -1,0 +1,6 @@
+
+Hylos Statistics for ulysses16:
+Time_mean=0.043436
+Time_std=0.002813
+Cost_mean=73.99
+Cost_std=0.00

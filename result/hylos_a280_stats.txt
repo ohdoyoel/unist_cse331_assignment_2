@@ -1,0 +1,6 @@
+
+Hylos Statistics for a280:
+Time_mean=1.765751
+Time_std=1.870990
+Cost_mean=3703.07
+Cost_std=102.38

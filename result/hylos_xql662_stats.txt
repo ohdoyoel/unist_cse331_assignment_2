@@ -1,0 +1,6 @@
+
+Hylos Statistics for xql662:
+Time_mean=1.860813
+Time_std=2.552798
+Cost_mean=3638.83
+Cost_std=81.12

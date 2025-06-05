@@ -1,27 +1,27 @@
-NAME : hylos_ulysses22
+NAME : mst2approx_ulysses22
 TYPE : TOUR
 DIMENSION : 22
 TOUR_SECTION
-3
-17
+1
+8
+22
 4
 18
-22
-8
-1
-12
+17
+2
+3
+16
 13
-14
-15
-5
-6
+12
 7
-9
-10
+6
 19
 20
 21
-16
+10
+9
 11
-2
+14
+15
+5
 -1

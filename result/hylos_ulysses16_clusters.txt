@@ -1,16 +1,6 @@
+Cluster Order: 1 
+
 Cluster 1:
-Centroid: (38.585, 22.5017)
-Cities: 1 16 2 3 4 8 
-
-Cluster 2:
-Centroid: (35.51, 12.35)
-Cities: 6 15 5 
-
-Cluster 3:
-Centroid: (38.1375, 14.69)
-Cities: 7 12 13 14 
-
-Cluster 4:
-Centroid: (39.4933, 5.64667)
-Cities: 9 10 11 
+Centroid: (38.0669, 15.485)
+Cities: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 
 
